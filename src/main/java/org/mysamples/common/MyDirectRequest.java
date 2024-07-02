@@ -7,14 +7,13 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.internals.ConsumerNetworkClient;
 import org.apache.kafka.clients.consumer.internals.RequestFuture;
 import org.apache.kafka.common.Node;
-import org.apache.kafka.common.message.AlterClientQuotasResponseData;
 import org.apache.kafka.common.message.ListGroupsRequestData;
-import org.apache.kafka.common.quota.ClientQuotaAlteration;
-import org.apache.kafka.common.quota.ClientQuotaEntity;
+import org.apache.kafka.common.message.MetadataRequestData;
+import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.requests.AbstractRequest;
-import org.apache.kafka.common.requests.AlterClientQuotasRequest;
-import org.apache.kafka.common.requests.AlterClientQuotasResponse;
 import org.apache.kafka.common.requests.ListGroupsRequest;
+import org.apache.kafka.common.requests.MetadataRequest;
+import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.utils.Time;
 import org.apache.log4j.Level;
 import org.slf4j.Logger;
@@ -22,10 +21,6 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Field;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -37,38 +32,24 @@ public class MyDirectRequest {
     public static void main(String[] args) throws Exception {
         Common.log4jClientConfig(Level.INFO);
 
-       Map clientProps = new HashMap<>();
+        Map clientProps = new HashMap<>();
         clientProps.put("bootstrap.servers", "localhost:9092");
 
         clientProps.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
         clientProps.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
 
         try {
-//            MetadataRequestData data = new MetadataRequestData();
-//            data.setTopics(null);
-//            data.setIncludeTopicAuthorizedOperations(true);
-//            AbstractRequest.Builder<?> requestBuilder = new MetadataRequest.Builder(data);
-//
-//            ClientResponse cr = sendAndPoll(clientProps, requestBuilder, Optional.ofNullable(null));
-//            MetadataResponse mr = (MetadataResponse) cr.responseBody();
-//            MetadataResponseData mdrd = mr.data();
-//
-//            System.out.println(" ");
-//            System.out.println(mdrd);
+            MetadataRequestData data = new MetadataRequestData();
+            data.setTopics(null);
+            data.setIncludeTopicAuthorizedOperations(true);
+            AbstractRequest.Builder<?> requestBuilder = new MetadataRequest.Builder(data);
 
-            Collection<ClientQuotaAlteration> entries = new ArrayList<>();
-            ClientQuotaEntity entity = new ClientQuotaEntity(Collections.singletonMap("TP",""));
-            ClientQuotaAlteration alteration = new ClientQuotaAlteration(entity,
-                    Arrays.asList(new ClientQuotaAlteration.Op("tp_byte_rate", 1000.0)));
-            entries.add(alteration);
-
-            AbstractRequest.Builder<?> requestBuilder = new AlterClientQuotasRequest.Builder(entries, false);
             ClientResponse cr = sendAndPoll(clientProps, requestBuilder, Optional.ofNullable(null));
-            AlterClientQuotasResponse resp = (AlterClientQuotasResponse) cr.responseBody();
-            AlterClientQuotasResponseData data = resp.data();
+            MetadataResponse mr = (MetadataResponse) cr.responseBody();
+            MetadataResponseData mdrd = mr.data();
 
             System.out.println(" ");
-            System.out.println(resp);
+            System.out.println(mdrd);
         } finally {
             Thread.sleep(2000L);
         }
@@ -79,10 +60,7 @@ public class MyDirectRequest {
             throws Exception {
 
         try(KafkaConsumer consumer = new KafkaConsumer<>(clientProps)) {
-            Field clientField = consumer.getClass().getDeclaredField("client");
-            clientField.setAccessible(true);
-            ConsumerNetworkClient cnc = (ConsumerNetworkClient) clientField.get(consumer);
-
+            ConsumerNetworkClient cnc = getConsumerNetworkClient(consumer);
             Node node = oNode.orElse(cnc.leastLoadedNode());
             LOG.info("Sending arbitrary request to node {}",node);
 
@@ -112,6 +90,27 @@ public class MyDirectRequest {
             ClientResponse response = future.value();
             return response;
         }
+    }
+
+    private static ConsumerNetworkClient getConsumerNetworkClient(KafkaConsumer consumer) throws NoSuchFieldException, IllegalAccessException {
+
+        Field[] fields = consumer.getClass().getDeclaredFields();
+        for (Field field : fields) {
+            if (field.getName().equals("client") && field.getType().equals(ConsumerNetworkClient.class)) {
+                field.setAccessible(true);
+                return (ConsumerNetworkClient) field.get(consumer);
+            }
+
+            // 3.7 and later
+            if (field.getName().equals("delegate") && field.getType().getSimpleName().equals("ConsumerDelegate")) {
+                field.setAccessible(true);
+                Object consumerDelegate = field.get(consumer);
+                Field cdfield = consumerDelegate.getClass().getDeclaredField("client");
+                cdfield.setAccessible(true);
+                return (ConsumerNetworkClient) cdfield.get(consumerDelegate);
+            }
+        }
+        throw new NoSuchFieldException("Can't find ConsumerNetworkClient by introspecting ");
     }
 
     private static void assertTrue(boolean done) {
