@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.mysamples.authorizer;
+package org.mysamples.server;
 
 import org.apache.kafka.common.Endpoint;
 import org.apache.kafka.common.acl.AclBinding;
@@ -42,7 +42,7 @@ import java.util.concurrent.CompletionStage;
 
 public class POCAuthorizer implements Authorizer {
 
-    public static final Logger logger = LoggerFactory.getLogger("org.apache.kafka.metadata.authorizer.POCAuthorizer");
+    public static final Logger logger = LoggerFactory.getLogger("or.mysamples.server.POCAuthorizer");
     private boolean isController;
 
     @Override

@@ -3,6 +3,7 @@ package org.mysamples.admin;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AlterConfigOp;
 import org.apache.kafka.clients.admin.AlterConfigsResult;
+import org.apache.kafka.clients.admin.ClientMetricsResourceListing;
 import org.apache.kafka.clients.admin.Config;
 import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.clients.admin.ConsumerGroupListing;
@@ -27,11 +28,14 @@ import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.TopicPartitionReplica;
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.log4j.Level;
 import org.mysamples.common.Common;
 
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -288,6 +292,25 @@ public class MyAdminAPISnippets {
                 featureUpdates.put("feature1", new FeatureUpdate((short) 5, FeatureUpdate.UpgradeType.UPGRADE));
                 UpdateFeaturesResult updateFeatures = adminClient.updateFeatures(featureUpdates, new UpdateFeaturesOptions());
                 updateFeatures.all().get();
+            }
+
+            // telemetry
+            if (false) {
+                Map<ConfigResource, Collection<AlterConfigOp>> configs = new HashMap<>();
+                ConfigResource cr = new ConfigResource(ConfigResource.Type.CLIENT_METRICS, "my-client-metrics");
+                configs.put(cr, Arrays.asList(
+                        new AlterConfigOp(new ConfigEntry("metrics","org.apache.kafka.producer."), AlterConfigOp.OpType.SET),
+                        new AlterConfigOp(new ConfigEntry("interval.ms","1000"), AlterConfigOp.OpType.SET),
+                        new AlterConfigOp(new ConfigEntry("match","client_id=.*"), AlterConfigOp.OpType.SET)
+                ));
+                adminClient.incrementalAlterConfigs(configs).all().get();
+
+                Uuid clientInstanceId = adminClient.clientInstanceId(Duration.ofSeconds(5));
+                System.out.println(">>> clientInstanceId = " + clientInstanceId);
+
+                // should show my-client-metrics
+                Collection<ClientMetricsResourceListing> clientMetricsResourceListings = adminClient.listClientMetricsResources().all().get();
+                System.out.println(">>> clientMetricsResourceListings = " + clientMetricsResourceListings);
             }
 
         } finally {
